@@ -1,61 +1,65 @@
-def call(def docker_image, def build_deps, def run_deps) {
-    def ros_distro
+def call(def docker_tag, def build_deps, def run_deps) {
     def image
-    def short_commit
-    //def pkg_name
-    //def version = sh(script: 'cat package.xml | grep -Po \'(?<version>)[0-9]*\\.[0-9]*\\.[0-9]*\'', returnStdout: true).trim()
-    //def pkg_name_split = currentBuild.fullProjectName.split('/')[-2]
-    //pkg_name = pkg_name_split.replaceAll('_','-').toLowerCase()
-    //pkg_release = 
-
-    short_commit = scm_vars.GIT_COMMIT[0..6]
+    def ros_version
+    def set_env = ". /opt/ros/\$ROS_DISTRO/setup.sh"
+    def build_script = libraryResource 'build.sh'
+    def git_commit  = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+    def n_commits = sh(script: "git rev-list --count HEAD", returnStdout: true).trim()
+    def pkg_release = "${n_commits}.${BUILD_NUMBER}.${git_commit}"
+    def pkg_requires = "'" + run_deps.join(',') + "'"
+    def pkg_prefix
+    def pkg_component
 
     stage ("Docker Pull") {
-        image = docker.image(docker_image)
+        image = docker.image("roszero/" + docker_tag)
         image.pull()
         image.inside() {
-            //arch = sh(script: 'gcc -dumpmachine', returnStdout: true).trim()
-            ros_distro = sh(script: 'echo $ROS_DISTRO', returnStdout: true).trim()
+            ros_version = sh(script: "$set_env && echo \$ROS_VERSION", returnStdout: true).trim()
+            pkg_prefix = sh(script: "lsb_release -is | tr A-Z a-z", returnStdout: true).trim()
+            pkg_component = sh(script: "lsb_release -cs", returnStdout: true).trim()
         }
     }
 
-    stage ("Build and Test") {
-        image.inside() {
-            sh "sudo apt update && sudo apt install -y " + build_deps.join(' ')
-            try {
-                sh ". /opt/ros/$ros_distro/setup.sh && colcon build --merge-install --event-handlers console_direct+"
-                try {
-                    sh ". /opt/ros/$ros_distro/setup.sh && colcon test --merge-install --event-handlers console_direct+"
-                } catch (err) {
-                    currentBuild.result = 'UNSTABLE'
-                }
-                junit skipPublishingChecks: true, testResults: "build/*/test_results/**/*.xml", allowEmptyResults: true
-            } catch (err) {
-                sh "sudo rm -rf build install log devel logs"
-                currentBuild.result = 'FAILED'
-                sh "exit 1"
+    def build_cmd = ros_version == "2" ? "colcon build --merge-install" : "catkin_make_isolated --source ."
+    def test_cmd =  ros_version == "2" ? "colcon test --merge-install"  : "catkin_make_isolated --source . --catkin-make-args run_tests"
+
+    image.inside("-u root") {
+        stage ("Build + Test") {
+            if (build_deps) {
+                sh "apt-get update && apt-get install -y " + build_deps.join(' ')
             }
-            sh "sudo rm -rf build install log devel logs"
+            sh "$set_env && $build_cmd"
+            try { sh "$set_env && $test_cmd" } catch (err) { currentBuild.result = 'UNSTABLE' }
+            junit skipPublishingChecks: true, testResults: "**/test_results/**/*.xml", allowEmptyResults: true
+        }
+        stage ("Build .deb") {
+            writeFile file: 'build.sh', text: build_script
+            sh "chmod +x ./build.sh && $set_env && ./build.sh $pkg_release $pkg_requires no"
+            sh "sh -c 'find . -name *$pkg_release*.deb | xargs dpkg-deb -c ' | tee ~package_list.txt"
+            archiveArtifacts artifacts: "**/*$pkg_release*.deb,~package_list.txt", fingerprint: true, allowEmptyArchive: false
         }
     }
 
-    //stage ("Build .deb") {
-    //    pkg_release = sh(script: "git rev-list --count HEAD", returnStdout: true).trim() + '-' branch_name + '-' + short_commit// + "-$BUILD_NUMBER"
-    //    try {
-    //        buildDeb(ecr, image, pkg_name, pkg_release, pkg_requires)
-    //    } catch (err) {
-    //        image.inside() {
-    //            sh "sudo rm -rf build install log"
-    //        }
-    //        currentBuild.result = 'FAILED'
-    //        sh "exit 1"
-    //    }
-    //    image.inside() {
-    //        sh "sudo rm -rf build install log"
-    //    }
-    //}
+    try {
+        withCredentials([string(credentialsId: 'gpg-id')]) {}
+    } catch (err) {
+        echo "Skipping deploy stage"
+        return
+    }
 
-    //stage ("Deploy .deb") {
-    //    deployDeb(pkg_name, branch_name, ros_distro, arch)
-    //}
+    stage ("Deploy .deb") {
+        withCredentials([string(credentialsId: 'gpg-id', variable: 'GPGID')]) {
+            withCredentials([string(credentialsId: 'gpg-pass', variable: 'GPGPASS')]) {
+                docker.image("roszero/deb-s3:latest").inside("-v /mnt/efs/gpg/.gnupg:/root/.gnupg -u root --entrypoint=") {
+                    try {
+                        sh "deb-s3 upload **/*${pkg_release}*.deb --prefix=${pkg_prefix} -c ${pkg_component} --bucket ros0-repo --s3-region=us-west-2 --lock -e --visibility=bucket_owner --sign=" + '${GPGID} --gpg-options "\\-\\-pinentry-mode=loopback \\-\\-passphrase ${GPGPASS}"'
+                    } catch (err) {
+                        echo "Failed to deploy .deb package!"
+                        currentBuild.result = 'FAILED'
+                    }
+                    sh "deb-s3 clean --bucket ros0-repo --s3-region us-west-2 --prefix $pkg_prefix -c $pkg_component"
+                }
+            }
+        }
+    }
 }
