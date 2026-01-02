@@ -21,7 +21,7 @@ def call(def docker_tag, def build_deps, def run_deps) {
 
     image.inside("-u root") {
         stage ("Build + Test") {
-            sh "apt-get install " + build_deps.join(' ')
+            sh "apt-get install -y " + build_deps.join(' ')
             sh "$set_env && $build_cmd"
             try { sh "$set_env && $test_cmd" } catch (err) { currentBuild.result = 'UNSTABLE' }
             junit skipPublishingChecks: true, testResults: "**/test_results/**/*.xml", allowEmptyResults: true
