@@ -39,11 +39,7 @@ if [ -z "$pkg_version" ]; then
 fi
 
 if [ -z "$pkg_name" ]; then
-   if [ "$ROS_VERSION" = "2" ] ; then
-        pkg_name="unknown"
-    else
-        pkg_name=`catkin_topological_order | head -1 | cut -f 1 -d ' '`
-   fi
+    pkg_name=`echo $PWD | rev | cut -d '/' -f1 | rev`
 fi
 
 . /opt/ros/$ROS_DISTRO/setup.sh && checkinstall -y \
