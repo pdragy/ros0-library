@@ -39,7 +39,7 @@ if [ -z "$pkg_version" ]; then
 fi
 
 if [ -z "$pkg_name" ]; then
-    pkg_name=`echo $PWD | rev | cut -d '/' -f1 | rev`
+    pkg_name=`echo $PWD | rev | cut -d '/' -f1 | cut -d '-' -f -2 | rev`
 fi
 
 . /opt/ros/$ROS_DISTRO/setup.sh && checkinstall -y \
