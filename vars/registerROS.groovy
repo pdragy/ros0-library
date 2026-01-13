@@ -20,8 +20,10 @@ def call(def docker_tag, def build_deps, def run_deps) {
         }
     }
 
-    def build_cmd = ros_version == "2" ? "colcon build --merge-install" : "catkin_make_isolated --source ."
-    def test_cmd =  ros_version == "2" ? "colcon test --merge-install"  : "catkin_make_isolated --source . --catkin-make-args run_tests"
+    def build_cmd = ros_version == "2" ? "colcon build --event-handlers console_direct+ --merge-install" : "catkin_make_isolated --source ."
+    def test_cmd =  ros_version == "2" ? "colcon test --event-handlers console_direct+ --merge-install"  : "catkin_make_isolated --source . --catkin-make-args run_tests"
+      set(ament_cmake_cpplint_FOUND TRUE)
+
 
     image.inside("-u root") {
         stage ("Build + Test") {
