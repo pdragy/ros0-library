@@ -28,7 +28,7 @@ if [ "$ROS_VERSION" = "2" ] ; then
 else
     rm -rf devel_isolated build_isolated
     build_cmd="catkin_make_isolated --source . --install --install-space $ros_home -DCMAKE_BUILD_TYPE=Release"
-    exclude_files="$ros_home/.rosinstall,$ros_home/_setup_util.py,$ros_home/env.sh,$ros_home/local_setup.*,$ros_home/setup.*,**/*.pyc"
+    exclude_files="$ros_home/.rosinstall,$ros_home/_setup_util.py,$ros_home/env.sh,$ros_home/local_setup.*,$ros_home/etc/catkin/profile.d/*,$ros_home/setup.*,**/*.pyc"
 fi
 
 #maintainer_email=`grep -Po '(?<=maintainer email=)[^>]+' package.xml`
