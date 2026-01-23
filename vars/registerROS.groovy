@@ -21,7 +21,7 @@ def call(def docker_tag, def build_deps, def run_deps) {
     }
 
     def build_cmd = ros_version == "2" ? "colcon build --merge-install" : "catkin_make_isolated --source ."
-    def test_cmd =  ros_version == "2" ? "colcon test --merge-install"  : "catkin_make_isolated --merge --source . --catkin-make-args run_tests"
+    def test_cmd =  ros_version == "2" ? "colcon test --event-handlers console_direct+ --merge-install"  : "catkin_make_isolated --merge --source . --catkin-make-args run_tests"
 
     image.inside("-u root") {
         stage ("Build + Test") {
